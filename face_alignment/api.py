@@ -109,7 +109,7 @@ class FaceAlignment:
         return self.get_landmarks_from_image(image_or_path, detected_faces, return_bboxes)
 
     @torch.no_grad()
-    def get_landmarks_from_image(self, image_or_path, detected_faces=None, return_bboxes=False):
+    def get_landmarks_from_image(self, image_or_path, detected_faces=None, return_bboxes=False, return_landmark_score=False,):
         """Predict the landmarks for each face present in the image.
 
         This function predicts a set of 68 2D or 3D images, one for each image present.
@@ -122,6 +122,17 @@ class FaceAlignment:
             detected_faces {list of numpy.array} -- list of bounding boxes, one for each face found
             in the image (default: {None})
             return_bboxes {boolean} -- If True, return the face bounding boxes in addition to the keypoints.
+            return_landmark_score {boolean} -- If True, return the keypoint scores along with the keypoints.
+        Return:
+            result:
+                1. If both return_bboxes and return_landmark_score is True, result will be:
+                    (landmarks, landmarks_scores), detected_faces
+                2. If only return_landmark_score is True, result will be:
+                    landmarks, landmarks_scores
+                3. If only return_bboxes is True, result will be:
+                    landmarks, detected_faces
+                4. Otherwise:
+                    landmarks
         """
         image = get_image(image_or_path)
 
@@ -133,6 +144,7 @@ class FaceAlignment:
             return None
 
         landmarks = []
+        landmarks_scores = []
         for i, d in enumerate(detected_faces):
             center = torch.tensor(
                 [d[2] - (d[2] - d[0]) / 2.0, d[3] - (d[3] - d[1]) / 2.0])
@@ -151,7 +163,7 @@ class FaceAlignment:
                 out += flip(self.face_alignment_net(flip(inp)).detach(), is_label=True)
             out = out.cpu().numpy()
 
-            pts, pts_img = get_preds_fromhm(out, center.numpy(), scale)
+            pts, pts_img, scores = get_preds_fromhm(out, center.numpy(), scale)
             pts, pts_img = torch.from_numpy(pts), torch.from_numpy(pts_img)
             pts, pts_img = pts.view(68, 2) * 4, pts_img.view(68, 2)
 
@@ -171,7 +183,10 @@ class FaceAlignment:
                     (pts_img, depth_pred * (1.0 / (256.0 / (200.0 * scale)))), 1)
 
             landmarks.append(pts_img.numpy())
-
+            landmarks_scores.append(scores)
+            
+        if return_landmark_score:
+            landmarks = (landmarks, landmarks_scores)
         if return_bboxes:
             return landmarks, detected_faces
         else:
